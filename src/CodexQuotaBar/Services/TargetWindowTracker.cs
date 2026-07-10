@@ -11,6 +11,7 @@ public sealed class TargetWindowTracker : IDisposable
     private readonly System.Threading.Timer _discoveryTimer;
     private readonly WinEventDelegate _callback;
     private readonly IntPtr _hook;
+    private bool _targetVisible;
     public IntPtr Target { get; private set; }
     public event Action<IntPtr>? TargetChanged;
     public event Action? TargetMoved;
@@ -25,7 +26,16 @@ public sealed class TargetWindowTracker : IDisposable
 
     public void Discover()
     {
-        if (Target != IntPtr.Zero && IsWindow(Target)) return;
+        if (Target != IntPtr.Zero && IsWindow(Target))
+        {
+            var visible = IsWindowVisible(Target) && !IsIconic(Target);
+            if (visible != _targetVisible)
+            {
+                _targetVisible = visible;
+                TargetVisibilityChanged?.Invoke(visible);
+            }
+            return;
+        }
         var found = IntPtr.Zero;
         EnumWindows((window, _) =>
         {
@@ -46,15 +56,20 @@ public sealed class TargetWindowTracker : IDisposable
             catch { }
             return true;
         }, IntPtr.Zero);
-        if (found != Target) { Target = found; TargetChanged?.Invoke(found); }
+        if (found != Target)
+        {
+            Target = found;
+            _targetVisible = found != IntPtr.Zero;
+            TargetChanged?.Invoke(found);
+        }
     }
 
     private void OnWindowEvent(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint threadId, uint milliseconds)
     {
         if (window == Target)
         {
-            if (eventType == EventSystemMinimizeStart) TargetVisibilityChanged?.Invoke(false);
-            else if (eventType == EventSystemMinimizeEnd) TargetVisibilityChanged?.Invoke(true);
+            if (eventType == EventSystemMinimizeStart) { _targetVisible = false; TargetVisibilityChanged?.Invoke(false); }
+            else if (eventType == EventSystemMinimizeEnd) { _targetVisible = true; TargetVisibilityChanged?.Invoke(true); }
             else TargetMoved?.Invoke();
         }
         else if (Target == IntPtr.Zero) Discover();
@@ -80,6 +95,7 @@ public sealed class TargetWindowTracker : IDisposable
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, System.Text.StringBuilder text, int maxCount);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowTextLength(IntPtr window);
     [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventDelegate callback, uint processId, uint threadId, uint flags);

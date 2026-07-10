@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1 - 2026-07-10
+
+- Hide the quota bar when Codex closes to the taskbar, then restore it only when Codex is visible again.
+
 ## 1.0.0 - 2026-07-10
 
 - Initial Windows release with official Codex app-server quota reads.

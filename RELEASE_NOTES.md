@@ -1,4 +1,8 @@
-# Codex Quota Bar 1.0.0
+# Codex Quota Bar 1.0.1
+
+## Fixed
+
+- The quota bar now hides when Codex is closed to the taskbar, matching normal minimization behavior.
 
 ## Highlights
 
