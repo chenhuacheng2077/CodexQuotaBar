@@ -1,0 +1,16 @@
+{
+  "rateLimits": {
+    "limitId": "codex",
+    "primary": { "usedPercent": 61, "windowDurationMins": 300, "resetsAt": 1783665243 },
+    "secondary": { "usedPercent": 10, "windowDurationMins": 10080, "resetsAt": 1784252043 },
+    "credits": { "hasCredits": false, "unlimited": false, "balance": "0" },
+    "planType": "plus"
+  },
+  "rateLimitsByLimitId": {
+    "codex": {
+      "limitId": "codex",
+      "primary": { "usedPercent": 61, "windowDurationMins": 300, "resetsAt": 1783665243 },
+      "secondary": { "usedPercent": 10, "windowDurationMins": 10080, "resetsAt": 1784252043 }
+    }
+  }
+}
