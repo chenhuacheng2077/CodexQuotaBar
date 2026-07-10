@@ -2,9 +2,7 @@
 
 Windows 10/11 companion bar for Codex Desktop. It uses only the official local `codex app-server` JSON-RPC interface; it does not inspect Codex UI, web pages, cookies, screenshots, or traffic.
 
-# before
-<img width="507" height="349" alt="b90cbb7ccceced6d2b75557a3e9039fa" src="https://github.com/user-attachments/assets/3dc67881-6bdd-455e-91df-7aa125b89128" />
-# now
+# now like this
 <img width="1661" height="256" alt="4b65124cc9aaa19310bed6533fcaadf1" src="https://github.com/user-attachments/assets/8b906345-a715-4c8b-92d1-e04c86cf5ffd" />
 
 ## Run
