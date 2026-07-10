@@ -4,7 +4,7 @@ Windows 10/11 companion bar for Codex Desktop. It uses only the official local `
 
 ## Run
 
-Open `src/CodexQuotaBar/bin/Release/net8.0-windows/win-x64/publish/CodexQuotaBar.exe`. Keep Codex Desktop running. The bar finds its window, follows moves/resizes, hides while minimized, and stays available in the system tray.
+Download the compressed self-contained `CodexQuotaBar.exe` from GitHub Releases. It needs no separate .NET installation. `CodexQuotaBar-runtime-required.exe` is an optional much smaller build for computers that already have the .NET 8 Windows Desktop Runtime. Keep Codex Desktop running. The bar finds its window, follows moves/resizes, hides while minimized, and stays available in the system tray.
 
 The application discovers the desktop-bundled CLI at `%LOCALAPPDATA%\OpenAI\Codex\bin\codex.exe`; an explicit CLI path can be saved in `%LOCALAPPDATA%\CodexQuotaBar\settings.json` as `CodexExecutablePath`.
 

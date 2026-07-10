@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2 - 2026-07-10
+
+- Compressed the self-contained Windows EXE from 162 MB to about 72 MB.
+- Added an optional runtime-required EXE for users who already have .NET 8 Windows Desktop Runtime.
+
 ## 1.0.1 - 2026-07-10
 
 - Hide the quota bar when Codex closes to the taskbar, then restore it only when Codex is visible again.

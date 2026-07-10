@@ -1,4 +1,9 @@
-# Codex Quota Bar 1.0.1
+# Codex Quota Bar 1.0.2
+
+## Downloads
+
+- `CodexQuotaBar.exe` is the compressed self-contained build. It works without installing .NET.
+- `CodexQuotaBar-runtime-required.exe` is the 206 KB build for PCs with .NET 8 Windows Desktop Runtime already installed.
 
 ## Fixed
 
