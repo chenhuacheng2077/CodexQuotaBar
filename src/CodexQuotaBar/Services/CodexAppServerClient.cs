@@ -9,6 +9,7 @@ public sealed class CodexAppServerClient : IAsyncDisposable
 {
     private readonly string _codexPath;
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> _pending = new();
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
     private Process? _process;
     private long _nextId;
     public event Action<QuotaSnapshot>? SnapshotUpdated;
@@ -79,8 +80,16 @@ public sealed class CodexAppServerClient : IAsyncDisposable
     private async Task SendAsync(object message)
     {
         if (_process is null) throw new InvalidOperationException("app-server 未启动");
-        await _process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(message));
-        await _process.StandardInput.FlushAsync();
+        await _writeLock.WaitAsync();
+        try
+        {
+            await _process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(message));
+            await _process.StandardInput.FlushAsync();
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 
     private async Task ReadLoopAsync()

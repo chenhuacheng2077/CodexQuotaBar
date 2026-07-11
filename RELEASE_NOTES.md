@@ -1,4 +1,4 @@
-# Codex Quota Bar 1.0.2
+# Codex Quota Bar 1.0.3
 
 ## Downloads
 
@@ -7,6 +7,7 @@
 
 ## Fixed
 
+- Fixed a startup race that could leave the lightweight build unable to read quota data.
 - The quota bar now hides when Codex is closed to the taskbar, matching normal minimization behavior.
 
 ## Highlights
