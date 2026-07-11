@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3 - 2026-07-11
+
+- Serialize JSON-RPC writes to prevent the lightweight build from getting stuck at “data unavailable” during concurrent startup refreshes.
+
 ## 1.0.2 - 2026-07-10
 
 - Compressed the self-contained Windows EXE from 162 MB to about 72 MB.
