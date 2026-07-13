@@ -11,6 +11,8 @@ public sealed class AppSettings
     public bool FollowCodexStartup { get; set; }
     public bool ShowResetTime { get; set; } = true;
     public bool ShowRemainingPercent { get; set; } = true;
+    public bool ShowCredits { get; set; } = true;
+    public bool ShowTokens { get; set; } = true;
     public int WarningThreshold { get; set; } = 20;
     public int CriticalThreshold { get; set; } = 10;
     public string? CodexExecutablePath { get; set; }

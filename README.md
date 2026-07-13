@@ -1,9 +1,31 @@
 # Codex Quota Bar
 
-Windows 10/11 companion bar for Codex Desktop. It uses only the official local `codex app-server` JSON-RPC interface; it does not inspect Codex UI, web pages, cookies, screenshots, or traffic.
+Windows 10/11 companion bar for Codex Desktop. Quota comes from the official local `codex app-server` JSON-RPC interface. Token totals are calculated locally from Codex's saved usage counters and workspace paths; nothing is uploaded.
 
 # now like this
 <img width="1661" height="256" alt="4b65124cc9aaa19310bed6533fcaadf1" src="https://github.com/user-attachments/assets/8b906345-a715-4c8b-92d1-e04c86cf5ffd" />
+
+## Quota model (2026-07)
+
+Codex can change which rate-limit windows it returns. This app **does not hardcode “5-hour + weekly”**.
+
+It renders whatever `account/rateLimits/read` (and `account/rateLimits/updated`) provides:
+
+| Situation | Bar behavior |
+|-----------|----------------|
+| Weekly only (`primary` ≈ 10080 min, `secondary` null) | One group, labeled **每周** |
+| 5-hour + weekly (legacy dual windows) | Two groups |
+| Monthly / other durations | Labeled **每月** / **N天** / **N小时** |
+| Credits balance &gt; 0 | Optional **额度币** group |
+
+Live Plus sample observed with Codex CLI `0.130.0-alpha.5`: only weekly primary, `secondary: null`.
+
+## Token totals
+
+- **本月**: tokens consumed by all saved Codex sessions during the current local calendar month.
+- **会话**: cumulative tokens for the most recently updated saved session in Codex's active workspace.
+
+The bar uses compact K / M / B values; hover it for exact totals. Right-click **显示 Token** to hide or restore this group.
 
 ## Run
 
@@ -21,4 +43,7 @@ dotnet test
 dotnet publish src/CodexQuotaBar/CodexQuotaBar.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-The sanitized Phase 1 response fixture is `fixtures/real-rate-limits.sanitized.json`.
+Sanitized fixtures:
+
+- `fixtures/real-rate-limits.sanitized.json` — current weekly-only payload
+- `fixtures/legacy-dual-windows.sanitized.json` — previous 5-hour + weekly payload
