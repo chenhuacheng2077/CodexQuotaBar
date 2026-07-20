@@ -75,12 +75,12 @@ public sealed class TargetWindowTracker : IDisposable
                 if (processName.StartsWith("CodexQuotaBar", StringComparison.OrdinalIgnoreCase)) return true;
 
                 var title = GetTitle(window);
-                var primary = IsPrimaryProcess(processName);
-                var fallback = !primary && !BrowserProcesses.Contains(processName) &&
+                var priority = GetProcessPriority(processName);
+                var fallback = priority == 0 && !BrowserProcesses.Contains(processName) &&
                                title.Contains("Codex", StringComparison.OrdinalIgnoreCase);
-                if (primary || fallback)
+                if (priority > 0 || fallback)
                 {
-                    candidates.Add(new WindowCandidate(window, primary, window == foreground));
+                    candidates.Add(new WindowCandidate(window, priority, window == foreground));
                 }
 
                 return true;
@@ -157,7 +157,8 @@ public sealed class TargetWindowTracker : IDisposable
 
     private IntPtr SelectTarget(IReadOnlyList<WindowCandidate> candidates)
     {
-        var primary = candidates.Where(candidate => candidate.Primary).ToList();
+        var highestPriority = candidates.Count == 0 ? 0 : candidates.Max(candidate => candidate.Priority);
+        var primary = candidates.Where(candidate => candidate.Priority == highestPriority && highestPriority > 0).ToList();
         if (primary.Count > 0)
         {
             var foreground = primary.FirstOrDefault(candidate => candidate.Foreground);
@@ -173,9 +174,9 @@ public sealed class TargetWindowTracker : IDisposable
         return IntPtr.Zero;
     }
 
-    private static bool IsPrimaryProcess(string processName) =>
-        processName.Equals("ChatGPT", StringComparison.OrdinalIgnoreCase) ||
-        processName.Equals("codex", StringComparison.OrdinalIgnoreCase);
+    private static int GetProcessPriority(string processName) =>
+        processName.Equals("ChatGPT", StringComparison.OrdinalIgnoreCase) ? 2 :
+        processName.Equals("codex", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
 
     private static bool IsPrimaryWindow(IntPtr window)
     {
@@ -186,7 +187,7 @@ public sealed class TargetWindowTracker : IDisposable
         try
         {
             using var process = Process.GetProcessById((int)processId);
-            return IsPrimaryProcess(process.ProcessName);
+            return GetProcessPriority(process.ProcessName) > 0;
         }
         catch
         {
@@ -220,9 +221,9 @@ public sealed class TargetWindowTracker : IDisposable
 
     private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
     private delegate void WinEventDelegate(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint threadId, uint milliseconds);
-    private readonly record struct WindowCandidate(IntPtr Handle, bool Primary, bool Foreground)
+    private readonly record struct WindowCandidate(IntPtr Handle, int Priority, bool Foreground)
     {
-        public bool Fallback => !Primary;
+        public bool Fallback => Priority == 0;
     }
 
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
