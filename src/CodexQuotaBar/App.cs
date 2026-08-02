@@ -12,6 +12,7 @@ namespace CodexQuotaBar;
 
 public sealed class App : System.Windows.Application
 {
+    private static readonly TimeSpan QuotaRefreshInterval = TimeSpan.FromSeconds(15);
     private readonly SettingsService _settingsService = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Dictionary<string, int> _warned = new();
@@ -69,7 +70,7 @@ public sealed class App : System.Windows.Application
             _client.StatusChanged += status => Dispatcher.BeginInvoke(() => _bar.SetStatus(status));
             await _client.StartAsync(_lifetime.Token);
             _ = RefreshTokenUsageAsync(_lifetime.Token);
-            _ = RefreshEveryMinuteAsync(_lifetime.Token);
+            _ = RefreshPeriodicallyAsync(_lifetime.Token);
         }
         catch (Exception ex)
         {
@@ -177,11 +178,11 @@ public sealed class App : System.Windows.Application
         }
     }
 
-    private async Task RefreshEveryMinuteAsync(CancellationToken cancellationToken)
+    private async Task RefreshPeriodicallyAsync(CancellationToken cancellationToken)
     {
         try
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+            using var timer = new PeriodicTimer(QuotaRefreshInterval);
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
                 await RefreshAsync();

@@ -23,9 +23,9 @@ Live Plus sample observed with Codex CLI `0.130.0-alpha.5`: only weekly primary,
 ## Token totals
 
 - **本月**: tokens consumed by all saved Codex sessions during the current local calendar month.
-- **会话**: cumulative tokens for the most recently updated saved session in Codex's active workspace.
+- **会话**: cumulative `total_token_usage.total_tokens` for the most recently written saved session with a known workspace. This follows the active conversation even when Codex's global workspace state is briefly stale.
 
-The bar uses compact K / M / B values; hover it for exact totals. Right-click **显示 Token** to hide or restore this group.
+The bar uses compact K / M / B values; hover it for exact totals. Monthly totals use cumulative counter deltas to avoid double-counting repeated token events. Quota is polled every 15 seconds and also accepts Codex's live rate-limit notifications. Right-click **显示 Token** to hide or restore this group.
 
 ## Run
 

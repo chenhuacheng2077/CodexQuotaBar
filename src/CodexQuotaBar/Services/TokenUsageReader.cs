@@ -22,6 +22,7 @@ public sealed class TokenUsageReader
         var monthEnd = monthStart.AddMonths(1);
         long monthTotal = 0;
         FileInfo? currentSession = null;
+        string? currentSessionCwd = null;
 
         foreach (var path in EnumerateSessionFiles())
         {
@@ -30,10 +31,15 @@ public sealed class TokenUsageReader
             try
             {
                 var info = new FileInfo(path);
-                if ((projectPath is null || isProject) &&
+                // The global active-workspace state can lag behind the desktop
+                // session the user is currently viewing. The most recently
+                // written session is a better local approximation of the
+                // currently active conversation, regardless of workspace.
+                if (cwd is not null &&
                     (currentSession is null || info.LastWriteTimeUtc > currentSession.LastWriteTimeUtc))
                 {
                     currentSession = info;
+                    currentSessionCwd = cwd;
                 }
                 var mayContainThisMonth = info.LastWriteTimeUtc >= monthStart.UtcDateTime;
                 if (!isProject && !mayContainThisMonth) continue;
@@ -68,7 +74,9 @@ public sealed class TokenUsageReader
             now,
             monthTotal,
             sessionTotal,
-            projectPath is null ? null : Path.GetFileName(projectPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
+            currentSessionCwd is null
+                ? projectPath is null ? null : Path.GetFileName(projectPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                : Path.GetFileName(currentSessionCwd.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)));
     }
 
     private IEnumerable<string> EnumerateSessionFiles()
@@ -174,6 +182,9 @@ public sealed class TokenUsageReader
 
         long monthTokens = 0;
         long finalTotal = 0;
+        long fallbackMonthTokens = 0;
+        long? previousTotal = null;
+        var hasCumulativeTotals = false;
         try
         {
             using var reader = new StreamReader(OpenRead(file.FullName));
@@ -188,19 +199,33 @@ public sealed class TokenUsageReader
                         !payload.TryGetProperty("type", out var payloadType) || payloadType.GetString() != "token_count" ||
                         !payload.TryGetProperty("info", out var info) || info.ValueKind != JsonValueKind.Object) continue;
 
-                    if (info.TryGetProperty("total_token_usage", out var totalUsage) &&
-                        totalUsage.TryGetProperty("total_tokens", out var rawTotal) && rawTotal.TryGetInt64(out var total))
-                    {
-                        finalTotal = total;
-                    }
+                    var timestamp = default(DateTimeOffset);
+                    var hasTimestamp = root.TryGetProperty("timestamp", out var rawTimestamp) &&
+                                       DateTimeOffset.TryParse(rawTimestamp.GetString(), CultureInfo.InvariantCulture,
+                                           DateTimeStyles.AssumeUniversal, out timestamp);
+                    var inMonth = hasTimestamp && timestamp >= monthStart && timestamp < monthEnd;
 
-                    if (!root.TryGetProperty("timestamp", out var rawTimestamp) ||
-                        !DateTimeOffset.TryParse(rawTimestamp.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp) ||
-                        timestamp < monthStart || timestamp >= monthEnd) continue;
-                    if (info.TryGetProperty("last_token_usage", out var lastUsage) &&
-                        lastUsage.TryGetProperty("total_tokens", out var rawLast) && rawLast.TryGetInt64(out var last))
+                    long total = 0;
+                    var hasTotal = info.TryGetProperty("total_token_usage", out var totalUsage) &&
+                                   totalUsage.TryGetProperty("total_tokens", out var rawTotal) &&
+                                   rawTotal.TryGetInt64(out total);
+                    if (hasTotal)
                     {
-                        monthTokens += last;
+                        hasCumulativeTotals = true;
+                        finalTotal = total;
+                        if (inMonth)
+                        {
+                            monthTokens += PositiveDelta(total, previousTotal);
+                        }
+                        previousTotal = total;
+                    }
+                    else if (inMonth && info.TryGetProperty("last_token_usage", out var lastUsage) &&
+                             lastUsage.TryGetProperty("total_tokens", out var rawLast) && rawLast.TryGetInt64(out var last))
+                    {
+                        // Older logs may not contain total_token_usage. Keep a
+                        // compatibility fallback, but use cumulative totals
+                        // whenever the modern field is available.
+                        fallbackMonthTokens += Math.Max(0, last);
                     }
                 }
                 catch (JsonException)
@@ -215,10 +240,16 @@ public sealed class TokenUsageReader
         {
         }
 
+        if (!hasCumulativeTotals) monthTokens = fallbackMonthTokens;
         var summary = new FileSummary(file.Length, file.LastWriteTimeUtc, monthKey, monthTokens, finalTotal);
         _summaryByFile[file.FullName] = summary;
         return summary;
     }
+
+    private static long PositiveDelta(long current, long? previous) =>
+        previous is null || current >= previous.Value
+            ? Math.Max(0, current - (previous ?? 0))
+            : Math.Max(0, current);
 
     private static FileStream OpenRead(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 

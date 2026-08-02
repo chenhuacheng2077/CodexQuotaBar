@@ -193,7 +193,7 @@ public sealed class QuotaBarWindow : Window
 
     private FrameworkElement BuildGroup(QuotaWindow quota)
     {
-        if (_compact) return CreateText($"{quota.Label} {quota.RemainingPercent:0}%", 12, FontWeights.Normal);
+        if (_compact) return CreateText($"{quota.Label} {UiTokens.FormatPercent(quota.RemainingPercent)}%", 12, FontWeights.Normal);
 
         var text = CreateText(FormatWindowText(quota), 12, FontWeights.Normal);
         var fill = new Border
@@ -224,7 +224,7 @@ public sealed class QuotaBarWindow : Window
     {
         var reset = !_settings.ShowResetTime || quota.ResetsAt is null ? "" : $" {FormatReset(quota)}";
         return _settings.ShowRemainingPercent
-            ? $"{quota.Label}  {quota.RemainingPercent:0}%{reset}"
+            ? $"{quota.Label}  {UiTokens.FormatPercent(quota.RemainingPercent)}%{reset}"
             : $"{quota.Label}{reset}";
     }
 
@@ -259,7 +259,7 @@ public sealed class QuotaBarWindow : Window
         foreach (var window in snapshot.Windows)
         {
             var reset = window.ResetsAt is null ? "重置时间未知" : $"重置 {window.ResetsAt.Value.LocalDateTime:yyyy-MM-dd HH:mm}";
-            lines.Add($"{window.Label}: 剩余 {window.RemainingPercent:0}% · 已用 {window.UsedPercent:0}% · {reset}");
+            lines.Add($"{window.Label}: 剩余 {UiTokens.FormatPercent(window.RemainingPercent)}% · 已用 {UiTokens.FormatPercent(window.UsedPercent)}% · {reset}");
         }
         if (snapshot.CreditsRemaining is not null)
         {

@@ -1,4 +1,5 @@
 using System.Windows.Media;
+using System.Globalization;
 
 namespace CodexQuotaBar.Services;
 
@@ -45,4 +46,7 @@ public static class UiTokens
         if (remainingPercent <= warningThreshold) return new SolidColorBrush(Warning);
         return new SolidColorBrush(Accent);
     }
+
+    public static string FormatPercent(double value) =>
+        Math.Floor(Math.Clamp(value, 0, 100)).ToString("0", CultureInfo.InvariantCulture);
 }

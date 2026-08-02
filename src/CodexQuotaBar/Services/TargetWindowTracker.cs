@@ -15,6 +15,20 @@ public sealed class TargetWindowTracker : IDisposable
     private readonly System.Threading.Timer _discoveryTimer;
     private readonly WinEventDelegate _callback;
     private readonly List<IntPtr> _hooks = new();
+    private static readonly HashSet<string> BrowserProcesses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "chrome",
+        "chromium",
+        "chrome_proxy",
+        "msedge",
+        "msedgewebview2",
+        "firefox",
+        "brave",
+        "opera",
+        "vivaldi",
+        "electron",
+        "browser",
+    };
     private int _discoveryBusy;
     private bool _targetVisible;
     private bool _disposed;
@@ -39,18 +53,8 @@ public sealed class TargetWindowTracker : IDisposable
         if (_disposed || Interlocked.Exchange(ref _discoveryBusy, 1) == 1) return;
         try
         {
-            if (Target != IntPtr.Zero && IsWindow(Target))
-            {
-                var visible = IsWindowVisible(Target) && !IsIconic(Target);
-                if (visible != _targetVisible)
-                {
-                    _targetVisible = visible;
-                    TargetVisibilityChanged?.Invoke(visible);
-                }
-                return;
-            }
-
-            var found = IntPtr.Zero;
+            var foreground = GetForegroundWindow();
+            var candidates = new List<WindowCandidate>();
             EnumWindows((window, _) =>
             {
                 GetWindowThreadProcessId(window, out var processId);
@@ -71,22 +75,38 @@ public sealed class TargetWindowTracker : IDisposable
                 if (processName.StartsWith("CodexQuotaBar", StringComparison.OrdinalIgnoreCase)) return true;
 
                 var title = GetTitle(window);
-                if (processName.Contains("codex", StringComparison.OrdinalIgnoreCase) ||
-                    processName.Equals("ChatGPT", StringComparison.OrdinalIgnoreCase) ||
-                    title.Contains("Codex", StringComparison.OrdinalIgnoreCase))
+                var priority = GetProcessPriority(processName);
+                var fallback = priority == 0 && !BrowserProcesses.Contains(processName) &&
+                               title.Contains("Codex", StringComparison.OrdinalIgnoreCase);
+                if (priority > 0 || fallback)
                 {
-                    found = window;
-                    return false;
+                    candidates.Add(new WindowCandidate(window, priority, window == foreground));
                 }
 
                 return true;
             }, IntPtr.Zero);
 
+            var found = SelectTarget(candidates);
+            if (found == IntPtr.Zero && Target != IntPtr.Zero && IsWindow(Target) && IsPrimaryWindow(Target))
+            {
+                // Keep a minimized Codex window as the owner so it can be restored later.
+                found = Target;
+            }
+
             if (found != Target)
             {
                 Target = found;
-                _targetVisible = found != IntPtr.Zero;
+                _targetVisible = IsTargetVisible(found);
                 TargetChanged?.Invoke(found);
+            }
+            else
+            {
+                var visible = IsTargetVisible(found);
+                if (visible != _targetVisible)
+                {
+                    _targetVisible = visible;
+                    TargetVisibilityChanged?.Invoke(visible);
+                }
             }
         }
         finally
@@ -98,6 +118,16 @@ public sealed class TargetWindowTracker : IDisposable
     private void OnWindowEvent(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint threadId, uint milliseconds)
     {
         if (_disposed) return;
+
+        if (eventType == EventSystemForeground)
+        {
+            // A browser tab can contain “Codex” in its title. Re-evaluate all
+            // candidates whenever the foreground window changes so a real
+            // ChatGPT/Codex process wins as soon as it appears.
+            Discover();
+            if (window == Target) TargetMoved?.Invoke();
+            return;
+        }
 
         if (window == Target && Target != IntPtr.Zero)
         {
@@ -125,6 +155,49 @@ public sealed class TargetWindowTracker : IDisposable
         }
     }
 
+    private IntPtr SelectTarget(IReadOnlyList<WindowCandidate> candidates)
+    {
+        var highestPriority = candidates.Count == 0 ? 0 : candidates.Max(candidate => candidate.Priority);
+        var primary = candidates.Where(candidate => candidate.Priority == highestPriority && highestPriority > 0).ToList();
+        if (primary.Count > 0)
+        {
+            var foreground = primary.FirstOrDefault(candidate => candidate.Foreground);
+            if (foreground.Handle != IntPtr.Zero) return foreground.Handle;
+
+            var current = primary.FirstOrDefault(candidate => candidate.Handle == Target);
+            return current.Handle != IntPtr.Zero ? current.Handle : primary[0].Handle;
+        }
+
+        var fallback = candidates.FirstOrDefault(candidate => candidate.Fallback);
+        if (fallback.Handle != IntPtr.Zero) return fallback.Handle;
+
+        return IntPtr.Zero;
+    }
+
+    private static int GetProcessPriority(string processName) =>
+        processName.Equals("ChatGPT", StringComparison.OrdinalIgnoreCase) ? 2 :
+        processName.Equals("codex", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+
+    private static bool IsPrimaryWindow(IntPtr window)
+    {
+        if (window == IntPtr.Zero || !IsWindow(window)) return false;
+        GetWindowThreadProcessId(window, out var processId);
+        if (processId == 0) return false;
+
+        try
+        {
+            using var process = Process.GetProcessById((int)processId);
+            return GetProcessPriority(process.ProcessName) > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsTargetVisible(IntPtr window) =>
+        window != IntPtr.Zero && IsWindow(window) && IsWindowVisible(window) && !IsIconic(window);
+
     private static string GetTitle(IntPtr window)
     {
         var length = GetWindowTextLength(window);
@@ -148,12 +221,17 @@ public sealed class TargetWindowTracker : IDisposable
 
     private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
     private delegate void WinEventDelegate(IntPtr hook, uint eventType, IntPtr window, int objectId, int childId, uint threadId, uint milliseconds);
+    private readonly record struct WindowCandidate(IntPtr Handle, int Priority, bool Foreground)
+    {
+        public bool Fallback => Priority == 0;
+    }
 
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, System.Text.StringBuilder text, int maxCount);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowTextLength(IntPtr window);
     [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventDelegate callback, uint processId, uint threadId, uint flags);
