@@ -1,4 +1,4 @@
-# Codex Quota Bar 1.1.0
+# Codex Quota Bar 1.1.1
 
 ## Downloads
 
@@ -6,6 +6,17 @@
 - `CodexQuotaBar-runtime-required.exe` is the small build for PCs with .NET 8 Windows Desktop Runtime already installed.
 
 ## Why this release
+
+This patch release fixes Token totals that could remain on an older session and monthly totals that could be inflated by repeated usage events.
+
+## 1.1.1 fixes
+
+- The current-session value follows the most recently written session with a known workspace, even when Codex's global workspace state is stale.
+- Monthly totals use cumulative `total_token_usage` deltas instead of summing duplicate-prone `last_token_usage` events.
+- Quota and Token data refresh every 15 seconds.
+- Remaining percentages are floored so the bar never displays more quota than remains.
+
+## 1.1.0 background
 
 ChatGPT Codex recently changed how quota is returned through `codex app-server`. On current Plus accounts the short **5-hour** window is no longer present (`secondary: null`); only a longer window such as **weekly** (`primary.windowDurationMins = 10080`) is returned. Older builds still reserved a 5-hour slot and showed “暂未返回”.
 

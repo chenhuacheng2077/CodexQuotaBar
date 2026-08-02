@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 - 2026-08-02
+
+- Select the most recently written saved session with a known workspace, avoiding stale global workspace state that could leave the session total stuck on an old value.
+- Calculate monthly Token usage from cumulative counter deltas to avoid double-counting repeated usage events.
+- Refresh quota and Token data every 15 seconds; keep displayed percentages from overstating remaining quota.
+
 ## 1.1.0 - 2026-07-13
 
 - Adapt to the current Codex rate-limit payload: when the 5-hour (`secondary`) window is absent/null, the bar shows only the windows Codex returns (currently weekly-only on Plus).

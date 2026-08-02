@@ -47,7 +47,7 @@ public sealed class CodexAppServerClient : IAsyncDisposable
         }) ?? throw new InvalidOperationException("无法启动 codex app-server");
 
         _ = Task.Run(ReadLoopAsync, CancellationToken.None);
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.1.0";
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.1.1";
         await RequestAsync("initialize", new { clientInfo = new { name = "Codex Quota Bar", version }, capabilities = new { } }, cancellationToken);
         await NotifyAsync("initialized", new { });
         await RefreshAsync(cancellationToken);
