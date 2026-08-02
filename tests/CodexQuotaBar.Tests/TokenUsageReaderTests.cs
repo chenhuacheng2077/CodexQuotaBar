@@ -22,7 +22,8 @@ public sealed class TokenUsageReaderTests
                 TokenLine("2026-06-30T12:01:00Z", 100, 100),
                 TokenLine("2026-07-01T12:01:00Z", 50, 150)
             ]);
-            File.WriteAllLines(Path.Combine(home, "sessions", "2026", "07", "01", "beta.jsonl"),
+            var beta = Path.Combine(home, "sessions", "2026", "07", "01", "beta.jsonl");
+            File.WriteAllLines(beta,
             [
                 """{"timestamp":"2026-07-02T12:00:00Z","type":"turn_context","payload":{"cwd":"F:\\projects\\beta"}}""",
                 TokenLine("2026-07-02T12:01:00Z", 200, 200)
@@ -35,6 +36,7 @@ public sealed class TokenUsageReaderTests
             ]);
             File.SetLastWriteTimeUtc(olderAlpha, new DateTime(2026, 7, 12, 0, 0, 0, DateTimeKind.Utc));
             File.SetLastWriteTimeUtc(alpha, new DateTime(2026, 7, 13, 0, 0, 0, DateTimeKind.Utc));
+            File.SetLastWriteTimeUtc(beta, new DateTime(2026, 7, 11, 0, 0, 0, DateTimeKind.Utc));
 
             var reader = new TokenUsageReader(home);
             var snapshot = reader.Read(new DateTimeOffset(2026, 7, 13, 12, 0, 0, TimeSpan.FromHours(8)));
@@ -48,6 +50,68 @@ public sealed class TokenUsageReaderTests
 
             Assert.AreEqual(315L, snapshot.MonthTotal);
             Assert.AreEqual(175L, snapshot.SessionTotal);
+        }
+        finally
+        {
+            Directory.Delete(home, true);
+        }
+    }
+
+    [TestMethod]
+    public void UsesMostRecentlyWrittenSessionWhenActiveWorkspaceStateIsStale()
+    {
+        var home = Path.Combine(Path.GetTempPath(), $"CodexQuotaBar-{Guid.NewGuid():N}");
+        try
+        {
+            var sessions = Path.Combine(home, "sessions", "2026", "08", "02");
+            Directory.CreateDirectory(sessions);
+            File.WriteAllText(Path.Combine(home, ".codex-global-state.json"), """{"active-workspace-roots":"F:\\projects\\old"}""");
+
+            var oldSession = Path.Combine(sessions, "old.jsonl");
+            File.WriteAllLines(oldSession,
+            [
+                """{"timestamp":"2026-08-02T08:00:00Z","type":"turn_context","payload":{"cwd":"F:\\projects\\old"}}""",
+                TokenLine("2026-08-02T08:01:00Z", 11700000, 11700000)
+            ]);
+            var currentSession = Path.Combine(sessions, "current.jsonl");
+            File.WriteAllLines(currentSession,
+            [
+                """{"timestamp":"2026-08-02T09:00:00Z","type":"turn_context","payload":{"cwd":"F:\\projects\\current"}}""",
+                TokenLine("2026-08-02T09:01:00Z", 12345678, 12345678)
+            ]);
+            File.SetLastWriteTimeUtc(oldSession, new DateTime(2026, 8, 2, 8, 2, 0, DateTimeKind.Utc));
+            File.SetLastWriteTimeUtc(currentSession, new DateTime(2026, 8, 2, 9, 2, 0, DateTimeKind.Utc));
+
+            var snapshot = new TokenUsageReader(home).Read(new DateTimeOffset(2026, 8, 2, 18, 0, 0, TimeSpan.FromHours(8)));
+
+            Assert.AreEqual(12345678L, snapshot.SessionTotal);
+            Assert.AreEqual("current", snapshot.ProjectName);
+        }
+        finally
+        {
+            Directory.Delete(home, true);
+        }
+    }
+
+    [TestMethod]
+    public void CalculatesMonthUsageFromCumulativeTotalsWithoutDoubleCountingLastUsage()
+    {
+        var home = Path.Combine(Path.GetTempPath(), $"CodexQuotaBar-{Guid.NewGuid():N}");
+        try
+        {
+            var sessions = Path.Combine(home, "sessions", "2026", "08", "02");
+            Directory.CreateDirectory(sessions);
+            var session = Path.Combine(sessions, "cumulative.jsonl");
+            File.WriteAllLines(session,
+            [
+                """{"timestamp":"2026-08-02T08:00:00Z","type":"turn_context","payload":{"cwd":"F:\\projects\\current"}}""",
+                TokenLine("2026-08-02T08:01:00Z", 100, 100),
+                TokenLine("2026-08-02T08:02:00Z", 200, 250)
+            ]);
+            var snapshot = new TokenUsageReader(home).Read(new DateTimeOffset(2026, 8, 2, 18, 0, 0, TimeSpan.FromHours(8)));
+
+            Assert.AreEqual(250L, snapshot.MonthTotal);
+            Assert.AreEqual(250L, snapshot.SessionTotal);
         }
         finally
         {

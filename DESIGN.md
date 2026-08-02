@@ -33,7 +33,8 @@ Reset copy uses relative time under 24 hours, otherwise local date/time.
 
 ## Token totals
 - 本月: sum of `last_token_usage.total_tokens` events whose timestamps fall in the local calendar month.
-- 会话: cumulative `total_token_usage.total_tokens` from the most recently updated saved session in Codex's active workspace.
+- 会话: cumulative `total_token_usage.total_tokens` from the most recently written saved session with a known workspace; this avoids relying solely on stale global workspace state.
+- 本月: cumulative counter deltas from all session files in the current calendar month, avoiding duplicate `last_token_usage` events.
 - Compact values use K / M / B in the bar; exact comma-separated values remain available in the tooltip.
 - Below 520 px, the bar enters compact mode: hide title/status, rails, and reset copy; keep each quota percentage plus abbreviated month/session Token totals. Full details remain in the tooltip.
 
