@@ -13,7 +13,12 @@ public static class OverlayPositioner
         var scale = Math.Max(1d, GetDpiForWindow(target) / 96d);
         var targetWidth = (rect.Right - rect.Left) / scale;
         var targetHeight = (rect.Bottom - rect.Top) / scale;
-        var width = Math.Clamp(targetWidth - 420, UiTokens.BarMinWidth, UiTokens.BarMaxWidth);
+        // Scale to the host window instead of using one fixed overlay width.
+        // The reserve leaves room for ChatGPT's title-bar actions on both sides.
+        var width = Math.Clamp(
+            targetWidth - UiTokens.BarWindowHorizontalReserve,
+            UiTokens.BarMinWidth,
+            UiTokens.BarMaxWidth);
         var height = UiTokens.BarHeight;
 
         bar.Width = width;

@@ -7,7 +7,10 @@ public static class UiTokens
 {
     public const double BarHeight = 34;
     public const double BarMinWidth = 360;
-    public const double BarMaxWidth = 640;
+    // The bar grows with the host window, but stays compact enough to leave
+    // the host's title-bar controls unobstructed.
+    public const double BarMaxWidth = 760;
+    public const double BarWindowHorizontalReserve = 320;
     public const double ProgressWidth = 76;
     public const double HorizontalPadding = 12;
     public const double CornerRadius = 8;
