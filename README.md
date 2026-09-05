@@ -5,11 +5,15 @@ Windows 10/11 companion bar for Codex Desktop. Quota comes from the official loc
 # now like this
 <img width="1661" height="256" alt="4b65124cc9aaa19310bed6533fcaadf1" src="https://github.com/user-attachments/assets/8b906345-a715-4c8b-92d1-e04c86cf5ffd" />
 
-## Quota model (2026-07)
+## Quota model (2026-09)
 
 Codex can change which rate-limit windows it returns. This app **does not hardcode “5-hour + weekly”**.
 
-It renders whatever `account/rateLimits/read` (and `account/rateLimits/updated`) provides:
+It renders the windows from the `codex` limit pool returned by
+`account/rateLimits/read` (and `account/rateLimits/updated`). Newer Codex
+versions may also return auxiliary pools such as `base_model_inference`; those
+are intentionally excluded because they are not the Plus Codex quota shown in
+ChatGPT Settings:
 
 | Situation | Bar behavior |
 |-----------|----------------|
@@ -33,7 +37,9 @@ Download the compressed self-contained `CodexQuotaBar.exe` from GitHub Releases.
 
 The application discovers the desktop-bundled CLI at `%LOCALAPPDATA%\OpenAI\Codex\bin\codex.exe`; an explicit CLI path can be saved in `%LOCALAPPDATA%\CodexQuotaBar\settings.json` as `CodexExecutablePath`.
 
-Right-click the quota bar and enable **随 Codex 启动** to register the lightweight companion in the current user's Windows startup. It stays hidden until it detects a Codex/ChatGPT Codex window, then attaches automatically. No administrator permission is required.
+Right-click the quota bar and enable **开机启动额度条** to register the lightweight companion in the current user's Windows startup. It stays hidden until it detects a Codex/ChatGPT Codex window, then attaches automatically. Manual hide remains in effect until **显示额度条** is selected from the tray. No administrator permission is required.
+
+The main bar keeps quota values compact. Click **⋯** for exact percentages, reset timestamps, Token totals, update time, and connection status. If the local Codex app-server restarts, the bar keeps the last successful data marked as stale and reconnects automatically.
 
 ## Build
 

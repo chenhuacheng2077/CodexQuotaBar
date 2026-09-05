@@ -12,6 +12,7 @@ public sealed class CodexAppServerClient : IAsyncDisposable
     private readonly string _codexPath;
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> _pending = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly TaskCompletionSource _disconnected = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Process? _process;
     private long _nextId;
     private int _disposed;
@@ -30,9 +31,28 @@ public sealed class CodexAppServerClient : IAsyncDisposable
         {
             configuredPath,
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenAI", "Codex", "bin", "codex.exe"),
-            Environment.GetEnvironmentVariable("CODEX_PATH")
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "OpenAI", "Codex", "bin", "codex.exe"),
+            Environment.GetEnvironmentVariable("CODEX_PATH"),
+            FindOnPath("codex.exe")
         };
         return candidates.FirstOrDefault(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path));
+    }
+
+    private static string? FindOnPath(string fileName)
+    {
+        foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+                     .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            try
+            {
+                var candidate = Path.Combine(directory, fileName);
+                if (File.Exists(candidate)) return candidate;
+            }
+            catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+            }
+        }
+        return null;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -47,11 +67,15 @@ public sealed class CodexAppServerClient : IAsyncDisposable
         }) ?? throw new InvalidOperationException("无法启动 codex app-server");
 
         _ = Task.Run(ReadLoopAsync, CancellationToken.None);
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.1.1";
+        _ = Task.Run(DrainStandardErrorAsync, CancellationToken.None);
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.2.0";
         await RequestAsync("initialize", new { clientInfo = new { name = "Codex Quota Bar", version }, capabilities = new { } }, cancellationToken);
         await NotifyAsync("initialized", new { });
         await RefreshAsync(cancellationToken);
     }
+
+    public Task WaitForDisconnectAsync(CancellationToken cancellationToken) =>
+        _disconnected.Task.WaitAsync(cancellationToken);
 
     public async Task RefreshAsync(CancellationToken cancellationToken)
     {
@@ -164,6 +188,25 @@ public sealed class CodexAppServerClient : IAsyncDisposable
         finally
         {
             FailPending("codex app-server 已断开");
+            _disconnected.TrySetResult();
+        }
+    }
+
+    private async Task DrainStandardErrorAsync()
+    {
+        try
+        {
+            while (_process is not null && !_process.HasExited &&
+                   await _process.StandardError.ReadLineAsync().ConfigureAwait(false) is not null)
+            {
+                // Keep the redirected stream drained. Server diagnostics can
+                // contain account context, so they are intentionally not copied
+                // into the application's persistent log.
+            }
+        }
+        catch (Exception ex)
+        {
+            AppLog.Write($"app-server 错误流读取失败: {ex.GetType().Name}");
         }
     }
 
@@ -196,6 +239,7 @@ public sealed class CodexAppServerClient : IAsyncDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
         FailPending("Codex 客户端已关闭");
+        _disconnected.TrySetResult();
         try
         {
             if (_process is { HasExited: false }) _process.Kill(true);

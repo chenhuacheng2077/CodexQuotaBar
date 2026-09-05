@@ -27,7 +27,13 @@ public static class QuotaNormalizer
             planType = topPlan.GetString();
         }
 
-        var windows = pools
+        // The current app-server response can contain more than one limit
+        // pool.  `base_model_inference` is an auxiliary pool and is not the
+        // Plus Codex quota shown in ChatGPT Settings.  When the real `codex`
+        // pool is present, only use that pool so its weekly window is not
+        // mistaken for the auxiliary pool's (usually 100%) weekly window.
+        var quotaPools = SelectQuotaPools(pools);
+        var windows = quotaPools
             .SelectMany(pool => ReadPoolWindows(pool.Id, pool.Pool))
             .GroupBy(window => window.Id, StringComparer.Ordinal)
             .Select(group => group.First())
@@ -48,7 +54,7 @@ public static class QuotaNormalizer
         }
 
         decimal? balance = null;
-        foreach (var pool in pools.Select(pool => pool.Pool).Append(TopLevelOrDefault(result)))
+        foreach (var pool in quotaPools.Select(pool => pool.Pool).Append(TopLevelOrDefault(result)))
         {
             if (pool.ValueKind != JsonValueKind.Object) continue;
             if (!pool.TryGetProperty("credits", out var creditsObject) || creditsObject.ValueKind != JsonValueKind.Object) continue;
@@ -66,6 +72,22 @@ public static class QuotaNormalizer
         }
 
         return new QuotaSnapshot(now, windows, balance, planType);
+    }
+
+    private static IReadOnlyList<(string Id, JsonElement Pool)> SelectQuotaPools(
+        IReadOnlyList<(string Id, JsonElement Pool)> pools)
+    {
+        var codexPools = pools
+            .Where(pool => string.Equals(pool.Id, "codex", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (codexPools.Count > 0) return codexPools;
+
+        // This pool is a separate inference allowance and does not correspond
+        // to the quota displayed in ChatGPT Settings.
+        return pools
+            .Where(pool => !string.Equals(pool.Id, "base_model_inference", StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
 
     private static JsonElement TopLevelOrDefault(JsonElement result) =>
@@ -90,9 +112,9 @@ public static class QuotaNormalizer
             return null;
         }
 
-        var used = value.TryGetProperty("usedPercent", out var rawUsed) && rawUsed.TryGetDouble(out var raw)
-            ? Math.Clamp(raw, 0, 100)
-            : 0;
+        var raw = 0d;
+        var hasUsageData = value.TryGetProperty("usedPercent", out var rawUsed) && rawUsed.TryGetDouble(out raw);
+        var used = hasUsageData ? Math.Clamp(raw, 0, 100) : 0;
         DateTimeOffset? resetsAt = value.TryGetProperty("resetsAt", out var reset) && reset.TryGetInt64(out var seconds)
             ? DateTimeOffset.FromUnixTimeSeconds(seconds)
             : null;
@@ -103,7 +125,8 @@ public static class QuotaNormalizer
             used,
             Math.Clamp(100 - used, 0, 100),
             minutes,
-            resetsAt);
+            resetsAt,
+            hasUsageData);
     }
 
     private static string Label(int minutes) => minutes switch

@@ -47,12 +47,41 @@ public sealed class QuotaNormalizerTests
     }
 
     [TestMethod]
-    public void FindsWindowsAcrossMultiplePools()
+    public void PrefersCodexPoolWhenAuxiliaryPoolsArePresent()
     {
         var snapshot = Normalize("""{"rateLimitsByLimitId":{"other":{"primary":{"usedPercent":1,"windowDurationMins":60}},"codex":{"secondary":{"usedPercent":2,"windowDurationMins":10080},"primary":{"usedPercent":3,"windowDurationMins":300}}}}""");
-        Assert.AreEqual(3, snapshot.Windows.Count);
+        Assert.AreEqual(2, snapshot.Windows.Count);
+        Assert.IsTrue(snapshot.Windows.All(window => window.Id.StartsWith("codex.", StringComparison.Ordinal)));
         Assert.AreEqual("codex.primary", snapshot.Windows.Single(window => window.Label == "5小时").Id);
         Assert.AreEqual("codex.secondary", snapshot.Windows.Single(window => window.Label == "每周").Id);
+    }
+
+    [TestMethod]
+    public void IgnoresAuxiliaryWeeklyPoolWhenCodexPoolHasFiveHourAndWeeklyLimits()
+    {
+        var snapshot = Normalize("""{"rateLimitsByLimitId":{"codex":{"primary":{"usedPercent":1,"windowDurationMins":300,"resetsAt":1787750335},"secondary":{"usedPercent":16,"windowDurationMins":10080,"resetsAt":1788274873}},"base_model_inference":{"primary":{"usedPercent":0,"windowDurationMins":10080,"resetsAt":1788337206}}}}""");
+
+        Assert.AreEqual(2, snapshot.Windows.Count);
+        Assert.AreEqual(99d, snapshot.ShortWindow?.RemainingPercent);
+        Assert.AreEqual(84d, snapshot.LongWindow?.RemainingPercent);
+        Assert.AreEqual("codex.secondary", snapshot.LongWindow?.Id);
+    }
+
+    [TestMethod]
+    public void DoesNotTreatMissingUsageAsOneHundredPercentRemaining()
+    {
+        var snapshot = Normalize("""{"rateLimits":{"limitId":"codex","primary":{"windowDurationMins":300,"resetsAt":1787750335}}}""");
+
+        Assert.AreEqual(1, snapshot.Windows.Count);
+        Assert.IsFalse(snapshot.Windows[0].HasUsageData);
+    }
+
+    [TestMethod]
+    public void DoesNotExposeAuxiliaryPoolAsCodexQuota()
+    {
+        var snapshot = Normalize("""{"rateLimitsByLimitId":{"base_model_inference":{"primary":{"usedPercent":0,"windowDurationMins":10080}}}}""");
+
+        Assert.AreEqual(0, snapshot.Windows.Count);
     }
 
     [TestMethod]

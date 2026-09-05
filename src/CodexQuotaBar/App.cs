@@ -17,14 +17,19 @@ public sealed class App : System.Windows.Application
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Dictionary<string, int> _warned = new();
     private readonly TokenUsageReader _tokenUsageReader = new();
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private AppSettings _settings = null!;
     private QuotaBarWindow _bar = null!;
     private TargetWindowTracker _tracker = null!;
-    private CodexAppServerClient? _client;
+    private volatile CodexAppServerClient? _client;
     private NotifyIcon _tray = null!;
     private QuotaSnapshot _snapshot = QuotaSnapshot.Empty;
     private TokenUsageSnapshot _tokenUsage = TokenUsageSnapshot.Empty;
     private int _tokenRefreshBusy;
+    private Task? _connectionLoop;
+    private bool _userHidden;
+    private ToolStripMenuItem? _trayStartupItem;
+    private System.Windows.Controls.MenuItem? _barStartupItem;
 
     [STAThread]
     public static void Main()
@@ -34,11 +39,12 @@ public sealed class App : System.Windows.Application
         new App().Run();
     }
 
-    protected override async void OnStartup(StartupEventArgs e)
+    protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         _settings = _settingsService.Load();
+        _userHidden = _settings.BarHidden;
         _bar = new QuotaBarWindow(_settings);
         _bar.RefreshRequested += () => _ = RefreshAsync();
         BuildBarMenu();
@@ -48,35 +54,17 @@ public sealed class App : System.Windows.Application
         _tracker.TargetMoved += () => Dispatcher.BeginInvoke(PositionBar);
         _tracker.TargetVisibilityChanged += visible => Dispatcher.BeginInvoke(() =>
         {
-            if (visible)
-            {
-                PositionBar();
-                _bar.Show();
-            }
-            else
-            {
-                _bar.Hide();
-            }
+            if (visible) PositionBar();
+            ApplyBarVisibility();
         });
 
         BuildTray();
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
         SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
 
-        try
-        {
-            _client = new CodexAppServerClient(_settings.CodexExecutablePath);
-            _client.SnapshotUpdated += snapshot => Dispatcher.BeginInvoke(() => UpdateSnapshot(snapshot));
-            _client.StatusChanged += status => Dispatcher.BeginInvoke(() => _bar.SetStatus(status));
-            await _client.StartAsync(_lifetime.Token);
-            _ = RefreshTokenUsageAsync(_lifetime.Token);
-            _ = RefreshPeriodicallyAsync(_lifetime.Token);
-        }
-        catch (Exception ex)
-        {
-            _bar.SetStatus(ex.Message);
-            AppLog.Write(ex.Message);
-        }
+        _connectionLoop = RunConnectionLoopAsync(_lifetime.Token);
+        _ = RefreshTokenUsageAsync(_lifetime.Token);
+        _ = RefreshPeriodicallyAsync(_lifetime.Token);
     }
 
     private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs args)
@@ -101,14 +89,36 @@ public sealed class App : System.Windows.Application
     {
         if (target == IntPtr.Zero)
         {
-            _bar.Hide();
+            ApplyBarVisibility();
             return;
         }
 
         _bar.AttachTo(target);
         PositionBar();
-        if (!_bar.IsVisible) _bar.Show();
+        ApplyBarVisibility();
         _ = RefreshAsync();
+    }
+
+    private void ApplyBarVisibility()
+    {
+        var shouldShow = !_userHidden && _tracker.Target != IntPtr.Zero && _tracker.TargetVisible;
+        if (shouldShow)
+        {
+            PositionBar();
+            if (!_bar.IsVisible) _bar.Show();
+        }
+        else if (_bar.IsVisible)
+        {
+            _bar.Hide();
+        }
+    }
+
+    private void SetUserHidden(bool hidden)
+    {
+        _userHidden = hidden;
+        _settings.BarHidden = hidden;
+        _settingsService.Save(_settings);
+        ApplyBarVisibility();
     }
 
     private void PositionBar() => OverlayPositioner.Position(_bar, _tracker.Target, _settings.Position);
@@ -122,7 +132,7 @@ public sealed class App : System.Windows.Application
 
     private void Warn(QuotaWindow quota)
     {
-        if (quota.ResetsAt is null) return;
+        if (!quota.HasUsageData || quota.ResetsAt is null) return;
         var key = $"{quota.Id}:{quota.ResetsAt:O}";
         var level = quota.RemainingPercent <= _settings.CriticalThreshold
             ? _settings.CriticalThreshold
@@ -138,10 +148,11 @@ public sealed class App : System.Windows.Application
 
     private async Task RefreshAsync()
     {
-        if (_client is null || _lifetime.IsCancellationRequested) return;
+        if (_lifetime.IsCancellationRequested || !await _refreshGate.WaitAsync(0)) return;
         try
         {
-            await _client.RefreshAsync(_lifetime.Token);
+            var client = _client;
+            if (client is not null) await client.RefreshAsync(_lifetime.Token);
             await RefreshTokenUsageAsync(_lifetime.Token);
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
@@ -150,6 +161,61 @@ public sealed class App : System.Windows.Application
         catch (Exception ex)
         {
             AppLog.Write($"手动刷新失败: {ex.Message}");
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
+    private async Task RunConnectionLoopAsync(CancellationToken cancellationToken)
+    {
+        var retry = 0;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            CodexAppServerClient? client = null;
+            try
+            {
+                await Dispatcher.InvokeAsync(() => _bar.SetStatus(retry == 0 ? "正在连接 Codex…" : "连接中断，正在重试…"));
+                client = new CodexAppServerClient(_settings.CodexExecutablePath);
+                client.SnapshotUpdated += snapshot => Dispatcher.BeginInvoke(() => UpdateSnapshot(snapshot));
+                client.StatusChanged += status => Dispatcher.BeginInvoke(() => _bar.SetStatus(status));
+                await client.StartAsync(cancellationToken);
+                _client = client;
+                retry = 0;
+                await client.WaitForDisconnectAsync(cancellationToken);
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    retry = 1;
+                    await Dispatcher.InvokeAsync(() => _bar.SetStatus("连接中断，正在重试…"));
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                retry++;
+                AppLog.Write($"连接 Codex 失败: {ex.Message}");
+                await Dispatcher.InvokeAsync(() => _bar.SetStatus("连接失败，保留上次数据并重试"));
+            }
+            finally
+            {
+                if (ReferenceEquals(_client, client)) _client = null;
+                if (client is not null) await client.DisposeAsync();
+            }
+
+            if (cancellationToken.IsCancellationRequested) break;
+            var delay = TimeSpan.FromSeconds(retry switch { <= 1 => 2, 2 => 5, 3 => 15, _ => 30 });
+            try
+            {
+                await Task.Delay(delay, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 
@@ -196,8 +262,8 @@ public sealed class App : System.Windows.Application
     private void BuildTray()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("显示额度条", null, (_, _) => { PositionBar(); _bar.Show(); });
-        menu.Items.Add("隐藏额度条", null, (_, _) => _bar.Hide());
+        menu.Items.Add("显示额度条", null, (_, _) => SetUserHidden(false));
+        menu.Items.Add("隐藏额度条", null, (_, _) => SetUserHidden(true));
 
         var position = new ToolStripMenuItem("位置");
         foreach (var mode in Enum.GetValues<BarPosition>())
@@ -250,7 +316,13 @@ public sealed class App : System.Windows.Application
             _bar.RenderTokens(_tokenUsage);
         });
         menu.Items.Add(settings);
-        menu.Items.Add("随 Codex 启动", null, (_, _) => ToggleFollowCodexStartup());
+        _trayStartupItem = new ToolStripMenuItem("开机启动额度条")
+        {
+            CheckOnClick = true,
+            Checked = IsLaunchAtStartupEnabled()
+        };
+        _trayStartupItem.Click += (_, _) => SetLaunchAtStartup(_trayStartupItem.Checked);
+        menu.Items.Add(_trayStartupItem);
         menu.Items.Add("退出", null, (_, _) => Shutdown());
 
         _tray = new NotifyIcon
@@ -346,27 +418,29 @@ public sealed class App : System.Windows.Application
 
         menu.Items.Add(new System.Windows.Controls.Separator());
         var hide = new System.Windows.Controls.MenuItem { Header = "隐藏额度条" };
-        hide.Click += (_, _) => _bar.Hide();
+        hide.Click += (_, _) => SetUserHidden(true);
         menu.Items.Add(hide);
 
-        var follow = new System.Windows.Controls.MenuItem
+        _barStartupItem = new System.Windows.Controls.MenuItem
         {
-            Header = "随 Codex 启动",
+            Header = "开机启动额度条",
             IsCheckable = true,
-            IsChecked = _settings.FollowCodexStartup
+            IsChecked = IsLaunchAtStartupEnabled()
         };
-        follow.Click += (_, _) => ToggleFollowCodexStartup();
-        menu.Items.Add(follow);
+        _barStartupItem.Click += (_, _) => SetLaunchAtStartup(_barStartupItem.IsChecked);
+        menu.Items.Add(_barStartupItem);
         _bar.ContextMenu = menu;
     }
 
-    private void ToggleFollowCodexStartup()
+    private bool IsLaunchAtStartupEnabled() => _settings.LaunchAtStartup || _settings.FollowCodexStartup;
+
+    private void SetLaunchAtStartup(bool enabled)
     {
-        _settings.FollowCodexStartup = !_settings.FollowCodexStartup;
-        _settings.LaunchAtStartup = _settings.FollowCodexStartup;
+        _settings.FollowCodexStartup = enabled;
+        _settings.LaunchAtStartup = enabled;
         _settingsService.Save(_settings);
         using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true)!;
-        if (_settings.FollowCodexStartup)
+        if (enabled)
         {
             key.SetValue("CodexQuotaBar", $"\"{Environment.ProcessPath}\"");
         }
@@ -374,6 +448,8 @@ public sealed class App : System.Windows.Application
         {
             key.DeleteValue("CodexQuotaBar", false);
         }
+        if (_trayStartupItem is not null) _trayStartupItem.Checked = enabled;
+        if (_barStartupItem is not null) _barStartupItem.IsChecked = enabled;
     }
 
     protected override async void OnExit(ExitEventArgs e)
@@ -384,6 +460,11 @@ public sealed class App : System.Windows.Application
         _tray?.Dispose();
         _tracker?.Dispose();
         if (_client is not null) await _client.DisposeAsync();
+        if (_connectionLoop is not null)
+        {
+            try { await _connectionLoop; }
+            catch (OperationCanceledException) { }
+        }
         _lifetime.Dispose();
         base.OnExit(e);
     }

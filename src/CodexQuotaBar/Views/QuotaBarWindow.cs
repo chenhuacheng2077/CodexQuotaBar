@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using CodexQuotaBar.Models;
@@ -15,6 +16,7 @@ public sealed class QuotaBarWindow : Window
     private readonly Border _shell = new() { CornerRadius = new CornerRadius(UiTokens.CornerRadius) };
     private readonly StackPanel _left;
     private readonly Button _refresh;
+    private readonly Button _details;
     private readonly AppSettings _settings;
     private IntPtr _owner;
     private bool _sourceInitialized;
@@ -22,6 +24,7 @@ public sealed class QuotaBarWindow : Window
     private QuotaSnapshot _quota = QuotaSnapshot.Empty;
     private TokenUsageSnapshot _tokens = TokenUsageSnapshot.Empty;
     private bool _compact;
+    private string? _connectionStatus;
 
     public QuotaBarWindow(AppSettings settings)
     {
@@ -51,6 +54,18 @@ public sealed class QuotaBarWindow : Window
         };
         _refresh.Click += (_, _) => RefreshRequested?.Invoke();
 
+        _details = new Button
+        {
+            Content = "⋯",
+            Width = 25,
+            Height = 24,
+            FontSize = 14,
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            ToolTip = "查看详细数据"
+        };
+        _details.Click += (_, _) => ShowDetails();
+
         var content = new DockPanel { LastChildFill = true, Margin = new Thickness(UiTokens.HorizontalPadding, 0, UiTokens.HorizontalPadding, 0) };
         _left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 0) };
         _left.Children.Add(_title);
@@ -60,12 +75,14 @@ public sealed class QuotaBarWindow : Window
         content.Children.Add(_left);
         DockPanel.SetDock(_refresh, Dock.Right);
         content.Children.Add(_refresh);
+        DockPanel.SetDock(_details, Dock.Right);
+        content.Children.Add(_details);
         content.Children.Add(_groups);
         _shell.Child = content;
         Content = _shell;
         SizeChanged += (_, _) =>
         {
-            var compact = ActualWidth < 520;
+            var compact = ActualWidth < 600;
             if (compact == _compact) return;
             _compact = compact;
             _left.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
@@ -107,14 +124,18 @@ public sealed class QuotaBarWindow : Window
     private void RenderContent()
     {
         var snapshot = _quota;
-        if (snapshot.UpdatedAt == DateTimeOffset.MinValue)
+        if (_connectionStatus is not null)
+        {
+            _status.Text = CompactStatus(_connectionStatus, snapshot.UpdatedAt);
+        }
+        else if (snapshot.UpdatedAt == DateTimeOffset.MinValue)
         {
             _status.Text = "加载额度…";
         }
         else
         {
             var plan = string.IsNullOrWhiteSpace(snapshot.PlanType) ? "" : $" · {snapshot.PlanType}";
-            _status.Text = $"更新于 {snapshot.UpdatedAt.LocalDateTime:t}{plan}";
+            _status.Text = $"{snapshot.UpdatedAt.LocalDateTime:t}{plan}";
         }
 
         _groups.Children.Clear();
@@ -182,8 +203,8 @@ public sealed class QuotaBarWindow : Window
 
     public void SetStatus(string status)
     {
-        _status.Text = status;
-        ToolTip = status;
+        _connectionStatus = string.Equals(status, "已连接 Codex", StringComparison.Ordinal) ? null : status;
+        RenderContent();
     }
 
     private void ApplyOwner()
@@ -193,14 +214,17 @@ public sealed class QuotaBarWindow : Window
 
     private FrameworkElement BuildGroup(QuotaWindow quota)
     {
-        if (_compact) return CreateText($"{quota.Label} {UiTokens.FormatPercent(quota.RemainingPercent)}%", 12, FontWeights.Normal);
+        var percentage = quota.HasUsageData ? $"{UiTokens.FormatPercent(quota.RemainingPercent)}%" : "—";
+        if (_compact) return CreateText($"{quota.Label} {percentage}", 12, FontWeights.Normal);
 
         var text = CreateText(FormatWindowText(quota), 12, FontWeights.Normal);
         var fill = new Border
         {
             Height = 5,
-            Width = UiTokens.ProgressWidth * quota.RemainingPercent / 100,
-            Background = UiTokens.ProgressBrush(quota.RemainingPercent, _settings.WarningThreshold, _settings.CriticalThreshold),
+            Width = quota.HasUsageData ? UiTokens.ProgressWidth * quota.RemainingPercent / 100 : 0,
+            Background = quota.HasUsageData
+                ? UiTokens.ProgressBrush(quota.RemainingPercent, _settings.WarningThreshold, _settings.CriticalThreshold)
+                : new SolidColorBrush(_dark ? UiTokens.DarkMuted : UiTokens.LightMuted),
             HorizontalAlignment = HorizontalAlignment.Left,
             CornerRadius = new CornerRadius(3)
         };
@@ -223,8 +247,9 @@ public sealed class QuotaBarWindow : Window
     private string FormatWindowText(QuotaWindow quota)
     {
         var reset = !_settings.ShowResetTime || quota.ResetsAt is null ? "" : $" {FormatReset(quota)}";
+        var percentage = quota.HasUsageData ? $"{UiTokens.FormatPercent(quota.RemainingPercent)}%" : "—";
         return _settings.ShowRemainingPercent
-            ? $"{quota.Label}  {UiTokens.FormatPercent(quota.RemainingPercent)}%{reset}"
+            ? $"{quota.Label}  {percentage}{reset}"
             : $"{quota.Label}{reset}";
     }
 
@@ -234,14 +259,9 @@ public sealed class QuotaBarWindow : Window
         var remaining = resetAt - DateTimeOffset.Now;
         if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
 
-        if (remaining < TimeSpan.FromDays(1))
-        {
-            if (remaining.TotalHours >= 1) return $"{Math.Ceiling(remaining.TotalHours):0}小时后重置";
-            if (remaining.TotalMinutes >= 1) return $"{Math.Ceiling(remaining.TotalMinutes):0}分钟后重置";
-            return "即将重置";
-        }
-
         var local = resetAt.LocalDateTime;
+        if (remaining < TimeSpan.FromMinutes(1)) return "即将重置";
+        if (remaining < TimeSpan.FromDays(1)) return $"{local:HH:mm}重置";
         return quota.WindowDurationMinutes >= 20000
             ? $"{local:M月d日}重置"
             : $"{local:M月d日 HH:mm}重置";
@@ -255,11 +275,19 @@ public sealed class QuotaBarWindow : Window
             return _status.Text;
         }
 
-        var lines = new List<string> { _status.Text };
+        var lines = new List<string>
+        {
+            _connectionStatus ?? (snapshot.UpdatedAt == DateTimeOffset.MinValue
+                ? "尚未取得额度数据"
+                : $"额度更新于 {snapshot.UpdatedAt.LocalDateTime:yyyy-MM-dd HH:mm:ss}")
+        };
         foreach (var window in snapshot.Windows)
         {
             var reset = window.ResetsAt is null ? "重置时间未知" : $"重置 {window.ResetsAt.Value.LocalDateTime:yyyy-MM-dd HH:mm}";
-            lines.Add($"{window.Label}: 剩余 {UiTokens.FormatPercent(window.RemainingPercent)}% · 已用 {UiTokens.FormatPercent(window.UsedPercent)}% · {reset}");
+            var usage = window.HasUsageData
+                ? $"剩余 {UiTokens.FormatPercent(window.RemainingPercent)}% · 已用 {UiTokens.FormatPercent(window.UsedPercent)}%"
+                : "用量数据未知";
+            lines.Add($"{window.Label}: {usage} · {reset}");
         }
         if (snapshot.CreditsRemaining is not null)
         {
@@ -273,6 +301,35 @@ public sealed class QuotaBarWindow : Window
         }
         lines.Add("点击 ↻ 可立即刷新。窗口数量会随 Codex 当前返回的额度策略变化。");
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private void ShowDetails()
+    {
+        var menu = new ContextMenu
+        {
+            PlacementTarget = _details,
+            Placement = PlacementMode.Bottom,
+            StaysOpen = false
+        };
+        foreach (var line in BuildTooltip(_quota, _tokens).Split(Environment.NewLine))
+        {
+            menu.Items.Add(new MenuItem { Header = line, IsEnabled = false });
+        }
+        menu.Items.Add(new Separator());
+        var refresh = new MenuItem { Header = "立即刷新" };
+        refresh.Click += (_, _) => RefreshRequested?.Invoke();
+        menu.Items.Add(refresh);
+        menu.IsOpen = true;
+    }
+
+    private static string CompactStatus(string status, DateTimeOffset updatedAt)
+    {
+        if (status.Contains("重试", StringComparison.Ordinal) || status.Contains("失败", StringComparison.Ordinal))
+        {
+            return updatedAt == DateTimeOffset.MinValue ? "连接重试中" : $"数据 {updatedAt.LocalDateTime:t} · 重试中";
+        }
+        if (status.Contains("正在连接", StringComparison.Ordinal)) return "连接中…";
+        return status;
     }
 
     private static string FormatTokens(long value) => value switch
@@ -291,6 +348,7 @@ public sealed class QuotaBarWindow : Window
         _title.Foreground = foreground;
         _status.Foreground = muted;
         _refresh.Foreground = foreground;
+        _details.Foreground = foreground;
         foreach (var child in _groups.Children.OfType<FrameworkElement>())
         {
             ApplyForeground(child, foreground);

@@ -14,6 +14,8 @@ public sealed class SettingsService
     public void Save(AppSettings settings)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(FilePath)!);
-        File.WriteAllText(FilePath, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+        var temporaryPath = FilePath + ".tmp";
+        File.WriteAllText(temporaryPath, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(temporaryPath, FilePath, true);
     }
 }

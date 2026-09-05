@@ -34,6 +34,7 @@ public sealed class TargetWindowTracker : IDisposable
     private bool _disposed;
 
     public IntPtr Target { get; private set; }
+    public bool TargetVisible => _targetVisible;
     public event Action<IntPtr>? TargetChanged;
     public event Action? TargetMoved;
     public event Action<bool>? TargetVisibilityChanged;

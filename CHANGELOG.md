@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0 - 2026-09-05
+
+- Prefer the `codex` rate-limit pool when Codex also returns auxiliary pools such as `base_model_inference`, keeping the displayed weekly percentage and reset date aligned with ChatGPT Settings.
+- Show missing usage percentages as unknown instead of 100%, and keep connection errors visible while older quota data remains on screen.
+- Reconnect automatically when the local Codex app-server exits, drain its diagnostic stream safely, merge overlapping refreshes, and discover both current Codex installation paths.
+- Add a compact main-bar layout with a clickable details menu, exact same-day reset times, and earlier compact-mode switching to prevent clipped Token text.
+- Keep manual hide state across target-window events, and label the Windows Run registration accurately as `开机启动额度条` in both menus.
+- Save settings through a temporary replacement file to reduce the chance of a partially written configuration.
+
 ## 1.1.1 - 2026-08-02
 
 - Select the most recently written saved session with a known workspace, avoiding stale global workspace state that could leave the session total stuck on an old value.

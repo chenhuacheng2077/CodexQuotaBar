@@ -1,4 +1,4 @@
-# Codex Quota Bar 1.1.1
+# Codex Quota Bar 1.2.0
 
 ## Downloads
 
@@ -7,14 +7,16 @@
 
 ## Why this release
 
-This patch release fixes Token totals that could remain on an older session and monthly totals that could be inflated by repeated usage events.
+This release makes quota data safer to interpret, reconnects automatically after local app-server interruptions, and keeps the one-line bar readable as more data is shown.
 
-## 1.1.1 fixes
+## 1.2.0 improvements
 
-- The current-session value follows the most recently written session with a known workspace, even when Codex's global workspace state is stale.
-- Monthly totals use cumulative `total_token_usage` deltas instead of summing duplicate-prone `last_token_usage` events.
-- Quota and Token data refresh every 15 seconds.
-- Remaining percentages are floored so the bar never displays more quota than remains.
+- Uses the `codex` quota pool shown by ChatGPT Settings and excludes the separate `base_model_inference` allowance.
+- Displays missing usage as unknown instead of incorrectly showing 100% remaining.
+- Reconnects automatically when `codex app-server` exits and keeps the last successful data visibly marked while retrying.
+- Coalesces overlapping refreshes and supports both current Codex installation directories.
+- Adds a compact layout and a **⋯** details menu for exact reset times and Token totals.
+- Keeps manual hide state stable across window events and names Windows startup behavior accurately.
 
 ## 1.1.0 background
 

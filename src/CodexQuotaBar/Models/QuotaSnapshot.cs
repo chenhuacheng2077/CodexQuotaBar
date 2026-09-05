@@ -18,7 +18,8 @@ public sealed record QuotaWindow(
     double UsedPercent,
     double RemainingPercent,
     int WindowDurationMinutes,
-    DateTimeOffset? ResetsAt);
+    DateTimeOffset? ResetsAt,
+    bool HasUsageData = true);
 
 public sealed record TokenUsageSnapshot(
     DateTimeOffset UpdatedAt,

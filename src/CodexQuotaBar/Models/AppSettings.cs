@@ -13,6 +13,7 @@ public sealed class AppSettings
     public bool ShowRemainingPercent { get; set; } = true;
     public bool ShowCredits { get; set; } = true;
     public bool ShowTokens { get; set; } = true;
+    public bool BarHidden { get; set; }
     public int WarningThreshold { get; set; } = 20;
     public int CriticalThreshold { get; set; } = 10;
     public string? CodexExecutablePath { get; set; }
