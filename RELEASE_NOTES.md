@@ -1,4 +1,4 @@
-# Codex Quota Bar 1.2.0
+# Codex Quota Bar 1.2.1
 
 ## Downloads
 
@@ -7,7 +7,15 @@
 
 ## Why this release
 
-This release makes quota data safer to interpret, reconnects automatically after local app-server interruptions, and keeps the one-line bar readable as more data is shown.
+This release makes the quota bar adapt to the ChatGPT window width while keeping the 1.2.0 reliability improvements.
+
+## 1.2.1 improvements
+
+- The bar grows with the host ChatGPT window instead of using one fixed width.
+- Small windows retain a compact minimum width.
+- Large windows can use up to 760px while preserving title-bar safety margins.
+
+## 1.2.0 background
 
 ## 1.2.0 improvements
 

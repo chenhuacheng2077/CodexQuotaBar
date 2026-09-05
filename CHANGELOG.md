@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1 - 2026-09-05
+
+- Make the quota bar width adapt to the ChatGPT window width.
+- Increase the maximum width to 760px while preserving safe space around title-bar controls.
+
 ## 1.2.0 - 2026-09-05
 
 - Prefer the `codex` rate-limit pool when Codex also returns auxiliary pools such as `base_model_inference`, keeping the displayed weekly percentage and reset date aligned with ChatGPT Settings.
