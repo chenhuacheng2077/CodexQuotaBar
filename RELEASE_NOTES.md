@@ -1,4 +1,4 @@
-# Codex Quota Bar 1.2.1
+# Codex Quota Bar 1.2.2
 
 ## Downloads
 
@@ -7,7 +7,14 @@
 
 ## Why this release
 
-This release makes the quota bar adapt to the ChatGPT window width while keeping the 1.2.0 reliability improvements.
+This release fixes the quota bar attaching to unrelated applications whose window titles contain "Codex".
+
+## 1.2.2 fix
+
+- The overlay now attaches only to ChatGPT or Codex application windows. A Codex++ installer or another similarly named program cannot become its target.
+- The current account response exposes both five-hour and weekly quota windows; the existing dynamic quota display handles both.
+
+## 1.2.1 background
 
 ## 1.2.1 improvements
 

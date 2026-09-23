@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2 - 2026-09-23
+
+- Restrict window attachment to the ChatGPT and Codex applications. Programs with "Codex" in their window title, such as Codex++ installers, are no longer mistaken for the target.
+
 ## 1.2.1 - 2026-09-05
 
 - Make the quota bar width adapt to the ChatGPT window width.
